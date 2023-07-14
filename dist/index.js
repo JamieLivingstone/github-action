@@ -49163,7 +49163,7 @@ exports.colors = [6, 2, 3, 4, 5, 1];
 try {
 	// Optional dependency (as in, doesn't need to be installed, NOT like optionalDependencies in package.json)
 	// eslint-disable-next-line import/no-extraneous-dependencies
-	const supportsColor = __nccwpck_require__(9364);
+	const supportsColor = __nccwpck_require__(8432);
 
 	if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
 		exports.colors = [
@@ -73962,6 +73962,14 @@ module.exports = require("net");
 
 /***/ }),
 
+/***/ 7742:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:process");
+
+/***/ }),
+
 /***/ 2037:
 /***/ ((module) => {
 
@@ -74058,7 +74066,433 @@ module.exports = require("zlib");
 
 /***/ }),
 
-/***/ 9364:
+/***/ 1347:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
+
+"use strict";
+// ESM COMPAT FLAG
+__nccwpck_require__.r(__webpack_exports__);
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "findUp": () => (/* binding */ findUp),
+  "findUpMultiple": () => (/* binding */ findUpMultiple),
+  "findUpMultipleSync": () => (/* binding */ findUpMultipleSync),
+  "findUpStop": () => (/* binding */ findUpStop),
+  "findUpSync": () => (/* binding */ findUpSync),
+  "pathExists": () => (/* reexport */ pathExists),
+  "pathExistsSync": () => (/* reexport */ pathExistsSync)
+});
+
+;// CONCATENATED MODULE: external "node:path"
+const external_node_path_namespaceObject = require("node:path");
+;// CONCATENATED MODULE: external "node:url"
+const external_node_url_namespaceObject = require("node:url");
+// EXTERNAL MODULE: external "node:process"
+var external_node_process_ = __nccwpck_require__(7742);
+;// CONCATENATED MODULE: external "node:fs"
+const external_node_fs_namespaceObject = require("node:fs");
+;// CONCATENATED MODULE: ./node_modules/yocto-queue/index.js
+/*
+How it works:
+`this.#head` is an instance of `Node` which keeps track of its current value and nests another instance of `Node` that keeps the value that comes after it. When a value is provided to `.enqueue()`, the code needs to iterate through `this.#head`, going deeper and deeper to find the last value. However, iterating through every single item is slow. This problem is solved by saving a reference to the last value as `this.#tail` so that it can reference it to add a new value.
+*/
+
+class Node {
+	value;
+	next;
+
+	constructor(value) {
+		this.value = value;
+	}
+}
+
+class Queue {
+	#head;
+	#tail;
+	#size;
+
+	constructor() {
+		this.clear();
+	}
+
+	enqueue(value) {
+		const node = new Node(value);
+
+		if (this.#head) {
+			this.#tail.next = node;
+			this.#tail = node;
+		} else {
+			this.#head = node;
+			this.#tail = node;
+		}
+
+		this.#size++;
+	}
+
+	dequeue() {
+		const current = this.#head;
+		if (!current) {
+			return;
+		}
+
+		this.#head = this.#head.next;
+		this.#size--;
+		return current.value;
+	}
+
+	clear() {
+		this.#head = undefined;
+		this.#tail = undefined;
+		this.#size = 0;
+	}
+
+	get size() {
+		return this.#size;
+	}
+
+	* [Symbol.iterator]() {
+		let current = this.#head;
+
+		while (current) {
+			yield current.value;
+			current = current.next;
+		}
+	}
+}
+
+;// CONCATENATED MODULE: ./node_modules/p-limit/index.js
+
+
+function pLimit(concurrency) {
+	if (!((Number.isInteger(concurrency) || concurrency === Number.POSITIVE_INFINITY) && concurrency > 0)) {
+		throw new TypeError('Expected `concurrency` to be a number from 1 and up');
+	}
+
+	const queue = new Queue();
+	let activeCount = 0;
+
+	const next = () => {
+		activeCount--;
+
+		if (queue.size > 0) {
+			queue.dequeue()();
+		}
+	};
+
+	const run = async (fn, resolve, args) => {
+		activeCount++;
+
+		const result = (async () => fn(...args))();
+
+		resolve(result);
+
+		try {
+			await result;
+		} catch {}
+
+		next();
+	};
+
+	const enqueue = (fn, resolve, args) => {
+		queue.enqueue(run.bind(undefined, fn, resolve, args));
+
+		(async () => {
+			// This function needs to wait until the next microtask before comparing
+			// `activeCount` to `concurrency`, because `activeCount` is updated asynchronously
+			// when the run function is dequeued and called. The comparison in the if-statement
+			// needs to happen asynchronously as well to get an up-to-date value for `activeCount`.
+			await Promise.resolve();
+
+			if (activeCount < concurrency && queue.size > 0) {
+				queue.dequeue()();
+			}
+		})();
+	};
+
+	const generator = (fn, ...args) => new Promise(resolve => {
+		enqueue(fn, resolve, args);
+	});
+
+	Object.defineProperties(generator, {
+		activeCount: {
+			get: () => activeCount,
+		},
+		pendingCount: {
+			get: () => queue.size,
+		},
+		clearQueue: {
+			value: () => {
+				queue.clear();
+			},
+		},
+	});
+
+	return generator;
+}
+
+;// CONCATENATED MODULE: ./node_modules/p-locate/index.js
+
+
+class EndError extends Error {
+	constructor(value) {
+		super();
+		this.value = value;
+	}
+}
+
+// The input can also be a promise, so we await it.
+const testElement = async (element, tester) => tester(await element);
+
+// The input can also be a promise, so we `Promise.all()` them both.
+const finder = async element => {
+	const values = await Promise.all(element);
+	if (values[1] === true) {
+		throw new EndError(values[0]);
+	}
+
+	return false;
+};
+
+async function pLocate(
+	iterable,
+	tester,
+	{
+		concurrency = Number.POSITIVE_INFINITY,
+		preserveOrder = true,
+	} = {},
+) {
+	const limit = pLimit(concurrency);
+
+	// Start all the promises concurrently with optional limit.
+	const items = [...iterable].map(element => [element, limit(testElement, element, tester)]);
+
+	// Check the promises either serially or concurrently.
+	const checkLimit = pLimit(preserveOrder ? 1 : Number.POSITIVE_INFINITY);
+
+	try {
+		await Promise.all(items.map(element => checkLimit(finder, element)));
+	} catch (error) {
+		if (error instanceof EndError) {
+			return error.value;
+		}
+
+		throw error;
+	}
+}
+
+;// CONCATENATED MODULE: ./node_modules/locate-path/index.js
+
+
+
+
+
+
+const typeMappings = {
+	directory: 'isDirectory',
+	file: 'isFile',
+};
+
+function checkType(type) {
+	if (Object.hasOwnProperty.call(typeMappings, type)) {
+		return;
+	}
+
+	throw new Error(`Invalid type specified: ${type}`);
+}
+
+const matchType = (type, stat) => stat[typeMappings[type]]();
+
+const toPath = urlOrPath => urlOrPath instanceof URL ? (0,external_node_url_namespaceObject.fileURLToPath)(urlOrPath) : urlOrPath;
+
+async function locatePath(
+	paths,
+	{
+		cwd = external_node_process_.cwd(),
+		type = 'file',
+		allowSymlinks = true,
+		concurrency,
+		preserveOrder,
+	} = {},
+) {
+	checkType(type);
+	cwd = toPath(cwd);
+
+	const statFunction = allowSymlinks ? external_node_fs_namespaceObject.promises.stat : external_node_fs_namespaceObject.promises.lstat;
+
+	return pLocate(paths, async path_ => {
+		try {
+			const stat = await statFunction(external_node_path_namespaceObject.resolve(cwd, path_));
+			return matchType(type, stat);
+		} catch {
+			return false;
+		}
+	}, {concurrency, preserveOrder});
+}
+
+function locatePathSync(
+	paths,
+	{
+		cwd = external_node_process_.cwd(),
+		type = 'file',
+		allowSymlinks = true,
+	} = {},
+) {
+	checkType(type);
+	cwd = toPath(cwd);
+
+	const statFunction = allowSymlinks ? external_node_fs_namespaceObject.statSync : external_node_fs_namespaceObject.lstatSync;
+
+	for (const path_ of paths) {
+		try {
+			const stat = statFunction(external_node_path_namespaceObject.resolve(cwd, path_), {
+				throwIfNoEntry: false,
+			});
+
+			if (!stat) {
+				continue;
+			}
+
+			if (matchType(type, stat)) {
+				return path_;
+			}
+		} catch {}
+	}
+}
+
+;// CONCATENATED MODULE: ./node_modules/path-exists/index.js
+
+
+async function pathExists(path) {
+	try {
+		await external_node_fs_namespaceObject.promises.access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function pathExistsSync(path) {
+	try {
+		external_node_fs_namespaceObject.accessSync(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+;// CONCATENATED MODULE: ./node_modules/find-up/index.js
+
+
+
+
+const find_up_toPath = urlOrPath => urlOrPath instanceof URL ? (0,external_node_url_namespaceObject.fileURLToPath)(urlOrPath) : urlOrPath;
+
+const findUpStop = Symbol('findUpStop');
+
+async function findUpMultiple(name, options = {}) {
+	let directory = external_node_path_namespaceObject.resolve(find_up_toPath(options.cwd) || '');
+	const {root} = external_node_path_namespaceObject.parse(directory);
+	const stopAt = external_node_path_namespaceObject.resolve(directory, options.stopAt || root);
+	const limit = options.limit || Number.POSITIVE_INFINITY;
+	const paths = [name].flat();
+
+	const runMatcher = async locateOptions => {
+		if (typeof name !== 'function') {
+			return locatePath(paths, locateOptions);
+		}
+
+		const foundPath = await name(locateOptions.cwd);
+		if (typeof foundPath === 'string') {
+			return locatePath([foundPath], locateOptions);
+		}
+
+		return foundPath;
+	};
+
+	const matches = [];
+	// eslint-disable-next-line no-constant-condition
+	while (true) {
+		// eslint-disable-next-line no-await-in-loop
+		const foundPath = await runMatcher({...options, cwd: directory});
+
+		if (foundPath === findUpStop) {
+			break;
+		}
+
+		if (foundPath) {
+			matches.push(external_node_path_namespaceObject.resolve(directory, foundPath));
+		}
+
+		if (directory === stopAt || matches.length >= limit) {
+			break;
+		}
+
+		directory = external_node_path_namespaceObject.dirname(directory);
+	}
+
+	return matches;
+}
+
+function findUpMultipleSync(name, options = {}) {
+	let directory = external_node_path_namespaceObject.resolve(find_up_toPath(options.cwd) || '');
+	const {root} = external_node_path_namespaceObject.parse(directory);
+	const stopAt = options.stopAt || root;
+	const limit = options.limit || Number.POSITIVE_INFINITY;
+	const paths = [name].flat();
+
+	const runMatcher = locateOptions => {
+		if (typeof name !== 'function') {
+			return locatePathSync(paths, locateOptions);
+		}
+
+		const foundPath = name(locateOptions.cwd);
+		if (typeof foundPath === 'string') {
+			return locatePathSync([foundPath], locateOptions);
+		}
+
+		return foundPath;
+	};
+
+	const matches = [];
+	// eslint-disable-next-line no-constant-condition
+	while (true) {
+		const foundPath = runMatcher({...options, cwd: directory});
+
+		if (foundPath === findUpStop) {
+			break;
+		}
+
+		if (foundPath) {
+			matches.push(external_node_path_namespaceObject.resolve(directory, foundPath));
+		}
+
+		if (directory === stopAt || matches.length >= limit) {
+			break;
+		}
+
+		directory = external_node_path_namespaceObject.dirname(directory);
+	}
+
+	return matches;
+}
+
+async function findUp(name, options = {}) {
+	const matches = await findUpMultiple(name, {...options, limit: 1});
+	return matches[0];
+}
+
+function findUpSync(name, options = {}) {
+	const matches = findUpMultipleSync(name, {...options, limit: 1});
+	return matches[0];
+}
+
+
+
+
+/***/ }),
+
+/***/ 8432:
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
 
 "use strict";
@@ -74071,8 +74505,8 @@ __nccwpck_require__.d(__webpack_exports__, {
   "default": () => (/* binding */ supports_color)
 });
 
-;// CONCATENATED MODULE: external "node:process"
-const external_node_process_namespaceObject = require("node:process");
+// EXTERNAL MODULE: external "node:process"
+var external_node_process_ = __nccwpck_require__(7742);
 ;// CONCATENATED MODULE: external "node:os"
 const external_node_os_namespaceObject = require("node:os");
 ;// CONCATENATED MODULE: external "node:tty"
@@ -74084,14 +74518,14 @@ const external_node_tty_namespaceObject = require("node:tty");
 
 // From: https://github.com/sindresorhus/has-flag/blob/main/index.js
 /// function hasFlag(flag, argv = globalThis.Deno?.args ?? process.argv) {
-function hasFlag(flag, argv = globalThis.Deno ? globalThis.Deno.args : external_node_process_namespaceObject.argv) {
+function hasFlag(flag, argv = globalThis.Deno ? globalThis.Deno.args : external_node_process_.argv) {
 	const prefix = flag.startsWith('-') ? '' : (flag.length === 1 ? '-' : '--');
 	const position = argv.indexOf(prefix + flag);
 	const terminatorPosition = argv.indexOf('--');
 	return position !== -1 && (terminatorPosition === -1 || position < terminatorPosition);
 }
 
-const {env} = external_node_process_namespaceObject;
+const {env} = external_node_process_;
 
 let flagForceColor;
 if (
@@ -74177,7 +74611,7 @@ function _supportsColor(haveStream, {streamIsTTY, sniffFlags = true} = {}) {
 		return min;
 	}
 
-	if (external_node_process_namespaceObject.platform === 'win32') {
+	if (external_node_process_.platform === 'win32') {
 		// Windows 10 build 10586 is the first Windows release that supports 256 colors.
 		// Windows 10 build 14931 is the first release that supports 16m/TrueColor.
 		const osRelease = external_node_os_namespaceObject.release().split('.');
@@ -74361,6 +74795,7 @@ const os = __nccwpck_require__(2037)
 const path = __nccwpck_require__(1017)
 const quote = __nccwpck_require__(5427)
 const cliParser = __nccwpck_require__(8604)()
+const { findUpSync } = __nccwpck_require__(1347)
 const findYarnWorkspaceRoot = __nccwpck_require__(6748)
 const debug = __nccwpck_require__(8237)('@cypress/github-action')
 const { ping } = __nccwpck_require__(9390)
@@ -74447,7 +74882,9 @@ const yarnFilename = path.join(
   findYarnWorkspaceRoot(workingDirectory) || workingDirectory,
   'yarn.lock'
 )
-const pnpmLockFilename = path.join(workingDirectory, 'pnpm-lock.yaml')
+const pnpmLockFilename = findUpSync('pnpm-lock.yaml', {
+  cwd: workingDirectory
+})
 const packageLockFilename = path.join(
   workingDirectory,
   'package-lock.json'

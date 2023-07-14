@@ -10,6 +10,7 @@ const os = require('os')
 const path = require('path')
 const quote = require('quote')
 const cliParser = require('argument-vector')()
+const { findUpSync } = require('find-up')
 const findYarnWorkspaceRoot = require('find-yarn-workspace-root')
 const debug = require('debug')('@cypress/github-action')
 const { ping } = require('./src/ping')
@@ -96,7 +97,9 @@ const yarnFilename = path.join(
   findYarnWorkspaceRoot(workingDirectory) || workingDirectory,
   'yarn.lock'
 )
-const pnpmLockFilename = path.join(workingDirectory, 'pnpm-lock.yaml')
+const pnpmLockFilename = findUpSync('pnpm-lock.yaml', {
+  cwd: workingDirectory
+})
 const packageLockFilename = path.join(
   workingDirectory,
   'package-lock.json'
